@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Férias Mil Grau{% endblock %}</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --primary:#0066CC;--light:#60AFFF;--accent:#00BFFF;
+  --dark:#0A0F1E;--card:#0D1B2A;--border:#1A3A5C;
+  --text:#F0F8FF;--muted:#7AADCC;--success:#00E096;--danger:#FF4D6D;
+  --laranja:#FF7A00;--roxo:#9B59B6;--verde:#27AE60;--purple:#9B59B6;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Nunito',sans-serif;background:var(--dark);color:var(--text);min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background:
+  radial-gradient(ellipse 80% 50% at 20% -10%,rgba(0,102,204,.22),transparent 60%),
+  radial-gradient(ellipse 60% 40% at 80% 110%,rgba(0,191,255,.12),transparent 60%);
+  pointer-events:none;z-index:0}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(100px);
+  background:var(--card);border:1px solid var(--border);color:var(--text);
+  padding:14px 28px;border-radius:12px;font-weight:700;font-size:14px;z-index:9999;
+  transition:transform .3s;box-shadow:0 8px 32px rgba(0,0,0,.5);min-width:200px;text-align:center}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.err{border-color:var(--danger);color:var(--danger)}
+.toast.ok{border-color:var(--success);color:var(--success)}
+.hidden{display:none!important}
+</style>
+{% block extra_css %}{% endblock %}
+</head>
+<body>
+{% block content %}{% endblock %}
+<div class="toast" id="toast"></div>
+<script>
+function toast(msg, type=''){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show '+type;
+  clearTimeout(t._t); t._t=setTimeout(()=>t.className='toast',3200);
+}
+{% block extra_js %}{% endblock %}
+</script>
+</body>
+</html>

@@ -1,0 +1,605 @@
+{% extends "base.html" %}
+{% block title %}Admin — Férias Mil Grau{% endblock %}
+
+{% block extra_css %}
+<style>
+body{display:flex;flex-direction:column;min-height:100vh}
+.layout{display:flex;flex:1;position:relative;z-index:1}
+
+/* SIDEBAR */
+.sidebar{width:220px;background:rgba(13,27,42,.95);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 0;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar-logo{font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--light);letter-spacing:2px;padding:0 20px 20px;border-bottom:1px solid var(--border);margin-bottom:10px}
+.sidebar-logo span{display:block;font-size:11px;color:var(--muted);font-family:'Nunito',sans-serif;letter-spacing:.5px;font-weight:700}
+.nav-item{display:flex;align-items:center;gap:10px;padding:12px 20px;color:var(--muted);font-size:14px;font-weight:700;cursor:pointer;transition:.2s;border-left:3px solid transparent;text-decoration:none}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,.04)}
+.nav-item.active{color:var(--light);border-left-color:var(--primary);background:rgba(0,102,204,.1)}
+.nav-icon{font-size:16px;width:20px;text-align:center}
+.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border)}
+.btn-logout{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;font-weight:700;text-decoration:none;transition:.2s}
+.btn-logout:hover{color:var(--danger)}
+
+/* MAIN */
+.main{flex:1;padding:28px;overflow-x:hidden}
+.page{display:none}.page.active{display:block}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.page-title{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--light);letter-spacing:2px}
+
+/* STATS */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;text-align:center}
+.stat-label{font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.stat-val{font-family:'Bebas Neue',sans-serif;font-size:38px;letter-spacing:1px}
+
+/* QUARTOS GRID */
+.quartos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:24px}
+.quarto-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 12px;text-align:center;transition:.2s}
+.quarto-card:hover{border-color:var(--accent)}
+.q-num{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px}
+.q-nome{font-size:10px;font-weight:700;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.5px}
+.q-barra-wrap{height:6px;background:var(--border);border-radius:4px;margin:8px 0}
+.q-barra{height:6px;border-radius:4px;transition:width .5s}
+.q-vagas-txt{font-size:11px;font-weight:800}
+
+/* TABELA */
+.table-wrap{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+.table-toolbar{display:flex;gap:12px;padding:16px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.search-input{flex:1;min-width:160px;background:#060d18;border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:'Nunito',sans-serif;font-size:14px;outline:none}
+.search-input:focus{border-color:var(--primary)}
+.filter-sel{background:#060d18;border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:'Nunito',sans-serif;font-size:13px;outline:none;-webkit-appearance:none;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{background:rgba(0,102,204,.12)}
+th{padding:12px 14px;text-align:left;font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid rgba(26,58,92,.5);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(0,102,204,.05)}
+.badge{display:inline-block;font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;letter-spacing:.5px}
+.badge-ok{background:rgba(0,224,150,.12);color:var(--success);border:1px solid rgba(0,224,150,.3)}
+.badge-ci{background:rgba(0,191,255,.12);color:var(--accent);border:1px solid rgba(0,191,255,.3)}
+.badge-cancel{background:rgba(255,77,109,.12);color:var(--danger);border:1px solid rgba(255,77,109,.3)}
+.badge-yes{background:rgba(0,224,150,.12);color:var(--success);border:1px solid rgba(0,224,150,.3)}
+.badge-no{background:rgba(26,58,92,.5);color:var(--muted);border:1px solid var(--border)}
+.empty-msg{text-align:center;color:var(--muted);padding:40px;font-weight:700}
+.act-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:5px 10px;border-radius:8px;cursor:pointer;font-size:11px;font-weight:700;transition:.2s;margin:1px}
+.act-btn:hover{border-color:var(--light);color:var(--text)}
+.act-btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+
+/* BOTÕES AÇÃO */
+.btn-action{padding:9px 18px;border:none;border-radius:10px;cursor:pointer;font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;transition:.2s;letter-spacing:.5px}
+.btn-add{background:rgba(0,224,150,.12);color:var(--success);border:1px solid rgba(0,224,150,.3)}
+.btn-add:hover{background:rgba(0,224,150,.22)}
+.btn-export{background:rgba(0,102,204,.12);color:var(--light);border:1px solid rgba(0,102,204,.3)}
+.btn-export:hover{background:rgba(0,102,204,.22)}
+
+/* CHECK-IN */
+.checkin-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;margin-bottom:20px}
+.checkin-input-wrap{display:flex;gap:10px;margin:16px 0;flex-wrap:wrap}
+.checkin-input-wrap input{flex:1;min-width:160px;background:#060d18;border:1.5px solid var(--border);border-radius:10px;padding:13px 16px;color:var(--text);font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:3px;outline:none}
+.checkin-input-wrap input:focus{border-color:var(--primary)}
+.btn-check{padding:13px 24px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;border:none;border-radius:10px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1.5px;cursor:pointer;transition:.2s;white-space:nowrap}
+.btn-check:hover{transform:translateY(-1px)}
+.checkin-result{display:none;background:var(--dark);border-radius:12px;padding:18px 22px;margin-top:14px}
+.checkin-result.ok{border:1px solid rgba(0,224,150,.3)}
+.checkin-result.err{border:1px solid rgba(255,77,109,.3)}
+.ci-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
+.ci-item:last-child{border-bottom:none}
+.ci-nome{font-weight:800}.ci-detalhe{color:var(--muted);font-size:11px;margin-top:2px}
+.ci-hora{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--muted)}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;position:relative}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--light);letter-spacing:1.5px;margin-bottom:20px}
+.modal-close{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;transition:.2s}
+.modal-close:hover{color:var(--text)}
+.form-group{margin-bottom:14px}
+.fml{display:block;font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.finp{width:100%;background:#060d18;border:1.5px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-family:'Nunito',sans-serif;font-size:14px;font-weight:600;outline:none;transition:border-color .2s;-webkit-appearance:none}
+.finp:focus{border-color:var(--primary)}
+.finp option{background:#0D1B2A}
+.dias-grid{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+.dia-btn{padding:8px 16px;background:#060d18;border:2px solid var(--border);border-radius:10px;color:var(--muted);font-weight:800;font-size:13px;cursor:pointer;transition:.2s}
+.dia-btn.on{border-color:var(--primary);color:var(--light);background:rgba(0,102,204,.14)}
+.btn-save{width:100%;padding:14px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;cursor:pointer;margin-top:16px;transition:all .2s}
+.btn-save:hover{transform:translateY(-2px)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.doc-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;margin:2px;background:rgba(0,224,150,.1);border:1px solid rgba(0,224,150,.3);color:var(--success)}
+.doc-badge.empty{background:rgba(26,58,92,.5);color:var(--muted);border-color:var(--border)}
+
+/* CONFIRM MODAL */
+.confirm-body{text-align:center;padding:10px 0}
+.confirm-nome{font-weight:800;font-size:16px;color:var(--light);margin:12px 0}
+.confirm-btns{display:flex;gap:10px;margin-top:20px;justify-content:center}
+.cbtn{padding:10px 24px;border:none;border-radius:10px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:800;cursor:pointer;transition:.2s}
+.cbtn-cancel{background:rgba(255,184,0,.12);color:#FFB800;border:1px solid rgba(255,184,0,.3)}
+.cbtn-delete{background:rgba(255,77,109,.12);color:var(--danger);border:1px solid rgba(255,77,109,.3)}
+.cbtn-cancel:hover{background:rgba(255,184,0,.22)}.cbtn-delete:hover{background:rgba(255,77,109,.22)}
+.cbtn-close{background:var(--border);color:var(--muted)}
+.cbtn-close:hover{color:var(--text)}
+
+@media(max-width:700px){
+  .sidebar{display:none}
+  .main{padding:16px}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .mobile-nav{display:flex!important}
+}
+.mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);z-index:50;padding:8px 0}
+.mnav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;color:var(--muted);font-size:10px;font-weight:700;transition:.2s}
+.mnav-item.active{color:var(--primary)}.mnav-item span{font-size:20px}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="layout">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      Férias Mil Grau
+      <span>Painel Admin</span>
+    </div>
+    <a class="nav-item active" id="nav-dashboard" onclick="goPage('dashboard')">
+      <span class="nav-icon">📊</span> Dashboard
+    </a>
+    <a class="nav-item" id="nav-quartos" onclick="goPage('quartos')">
+      <span class="nav-icon">🛏️</span> Quartos
+    </a>
+    <a class="nav-item" id="nav-participantes" onclick="goPage('participantes')">
+      <span class="nav-icon">👥</span> Participantes
+    </a>
+    <a class="nav-item" id="nav-checkin" onclick="goPage('checkin')">
+      <span class="nav-icon">✅</span> Check-in
+    </a>
+    <a class="nav-item" id="nav-anexos" onclick="goPage('anexos')">
+      <span class="nav-icon">📁</span> Documentos
+    </a>
+    <div class="sidebar-footer">
+      <a href="/" style="display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;font-weight:700;text-decoration:none;margin-bottom:10px">← Ir para inscrições</a>
+      <a href="/admin/logout" class="btn-logout">🚪 Sair do Painel</a>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-header">
+        <div class="page-title">Dashboard</div>
+        <button class="btn-action btn-export" onclick="exportarCSV()">⬇ Exportar CSV</button>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Total Inscritos</div><div class="stat-val" id="s-total" style="color:var(--light)">—</div></div>
+        <div class="stat-card"><div class="stat-label">Check-ins</div><div class="stat-val" id="s-ci" style="color:var(--success)">—</div></div>
+        <div class="stat-card"><div class="stat-label">Vagas Ocupadas</div><div class="stat-val" id="s-ocup" style="color:var(--accent)">—</div></div>
+        <div class="stat-card"><div class="stat-label">Quartos Lotados</div><div class="stat-val" id="s-lotado" style="color:var(--danger)">—</div></div>
+        <div class="stat-card"><div class="stat-label">Com Documentos</div><div class="stat-val" id="s-docs" style="color:var(--purple)">—</div></div>
+      </div>
+      <div class="quartos-grid" id="dash-quartos"></div>
+    </div>
+
+    <!-- QUARTOS -->
+    <div class="page" id="page-quartos">
+      <div class="page-header"><div class="page-title">Controle de Quartos</div></div>
+      <div class="quartos-grid" id="quartos-grid"></div>
+    </div>
+
+    <!-- PARTICIPANTES -->
+    <div class="page" id="page-participantes">
+      <div class="page-header">
+        <div class="page-title">Participantes</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn-action btn-add" onclick="abrirModalNovo()">＋ Novo Inscrito</button>
+          <button class="btn-action btn-export" onclick="exportarCSV()">⬇ Exportar CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-toolbar">
+          <input class="search-input" id="search" placeholder="🔍 Buscar nome, e-mail, ID, quarto..." oninput="renderTabela()">
+          <select class="filter-sel" id="filtro-status" onchange="renderTabela()">
+            <option value="">Todos os status</option>
+            <option value="Confirmado">Confirmado</option>
+            <option value="checkin">Check-in feito</option>
+            <option value="Cancelado">Cancelado</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>ID</th><th>Nome</th><th>Contato</th><th>Dias</th><th>Quarto</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody id="tabela-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHECK-IN -->
+    <div class="page" id="page-checkin">
+      <div class="page-header"><div class="page-title">Check-in por QR Code</div></div>
+      <div class="checkin-box">
+        <p style="color:var(--muted);font-size:14px">Digite o código do participante (ex: FMG-AB12CD) ou escaneie o QR Code</p>
+        <div class="checkin-input-wrap">
+          <input id="ci-input" placeholder="FMG-XXXXXX" onkeydown="if(event.key==='Enter')fazerCheckin()">
+          <button class="btn-check" onclick="fazerCheckin()">Confirmar</button>
+        </div>
+        <div class="checkin-result" id="ci-result"></div>
+      </div>
+      <div id="ci-history"></div>
+    </div>
+
+    <!-- DOCUMENTOS -->
+    <div class="page" id="page-anexos">
+      <div class="page-header"><div class="page-title">Documentos Enviados</div></div>
+      <div class="table-wrap">
+        <div class="table-toolbar">
+          <input class="search-input" id="search-anx" placeholder="🔍 Buscar nome ou ID..." oninput="renderTabelaAnexos()">
+          <select class="filter-sel" id="filtro-anx" onchange="renderTabelaAnexos()">
+            <option value="">Todos os documentos</option>
+            <option value="doc_participante">Doc. Participante</option>
+            <option value="doc_responsavel">Doc. Responsáveis</option>
+            <option value="autorizacao">Autorização</option>
+            <option value="atestado">Atestado</option>
+            <option value="comunicacao">Comunicação</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Participante</th>
+              <th>🪪 Doc. Part.</th><th>👨‍👩‍👧 Doc. Resp.</th>
+              <th>✍️ Autori.</th><th>🏥 Atestado</th><th>📢 Comunic.</th>
+              <th>Ações</th>
+            </tr></thead>
+            <tbody id="tabela-anexos-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- MOBILE NAV -->
+<div class="mobile-nav">
+  <div class="mnav-item active" id="mnav-dashboard" onclick="goPage('dashboard')"><span>📊</span>Dash</div>
+  <div class="mnav-item" id="mnav-quartos" onclick="goPage('quartos')"><span>🛏️</span>Quartos</div>
+  <div class="mnav-item" id="mnav-participantes" onclick="goPage('participantes')"><span>👥</span>Pessoas</div>
+  <div class="mnav-item" id="mnav-checkin" onclick="goPage('checkin')"><span>✅</span>Check-in</div>
+  <div class="mnav-item" id="mnav-anexos" onclick="goPage('anexos')"><span>📁</span>Docs</div>
+</div>
+
+<!-- MODAL INSCRITO -->
+<div class="modal-overlay" id="modal-inscrito">
+  <div class="modal">
+    <button class="modal-close" onclick="fecharModalInscrito()">✕</button>
+    <div class="modal-title" id="modal-inscrito-title">Novo Inscrito</div>
+    <div class="form-row">
+      <div class="form-group"><label class="fml">Nome</label><input class="finp" id="m-nome" placeholder="Nome completo"></div>
+      <div class="form-group"><label class="fml">Idade</label><input class="finp" id="m-idade" placeholder="17"></div>
+    </div>
+    <div class="form-group"><label class="fml">E-mail</label><input class="finp" id="m-email" placeholder="email@exemplo.com"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="fml">Telefone</label><input class="finp" id="m-telefone" placeholder="(00) 00000-0000"></div>
+      <div class="form-group"><label class="fml">Cidade</label><input class="finp" id="m-cidade" placeholder="São Paulo — SP"></div>
+    </div>
+    <div class="form-group">
+      <label class="fml">Dias de presença</label>
+      <div class="dias-grid">
+        <div class="dia-btn" id="dia-sex" onclick="toggleDia('sex')">Sex 01/08</div>
+        <div class="dia-btn" id="dia-sab" onclick="toggleDia('sab')">Sáb 02/08</div>
+        <div class="dia-btn" id="dia-dom" onclick="toggleDia('dom')">Dom 03/08</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="fml">Quarto</label>
+      <select class="finp" id="m-quarto"></select>
+    </div>
+    <div class="form-group" id="m-status-wrap">
+      <label class="fml">Status</label>
+      <select class="finp" id="m-status">
+        <option value="Confirmado">Confirmado</option>
+        <option value="Cancelado">Cancelado</option>
+      </select>
+    </div>
+    <button class="btn-save" onclick="salvarInscrito()">💾 Salvar Inscrito</button>
+  </div>
+</div>
+
+<!-- MODAL CONFIRM -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title">Confirmar Ação</div>
+    <div class="confirm-body">
+      <p style="color:var(--muted);font-size:14px">Você quer cancelar ou excluir:</p>
+      <div class="confirm-nome" id="confirm-nome-txt"></div>
+    </div>
+    <div class="confirm-btns">
+      <button class="cbtn cbtn-cancel" onclick="confirmarAcao('cancelar')">⚠️ Cancelar Inscrição</button>
+      <button class="cbtn cbtn-delete" onclick="confirmarAcao('excluir')">🗑️ Excluir</button>
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:10px">
+      <button class="cbtn cbtn-close" onclick="fecharConfirm()">Voltar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+// ─── Estado ──────────────────────────────────────────────────────────────────
+let todos         = [];
+let quartosAdmin  = [];
+let editandoId    = null;
+let diasSel       = [];
+let _confirmTid   = null;
+let ciHistory     = [];
+
+// ─── Navegação ───────────────────────────────────────────────────────────────
+const PAGES = ['dashboard','quartos','participantes','checkin','anexos'];
+function goPage(pg){
+  PAGES.forEach(p=>{
+    document.getElementById('page-'+p)?.classList.toggle('active',p===pg);
+    document.getElementById('nav-'+p)?.classList.toggle('active',p===pg);
+    document.getElementById('mnav-'+p)?.classList.toggle('active',p===pg);
+  });
+  if(pg==='dashboard') renderDashboard();
+  else if(pg==='quartos') renderQuartosAdmin();
+  else if(pg==='participantes') renderTabela();
+  else if(pg==='anexos') renderTabelaAnexos();
+}
+
+// ─── Fetch helpers ────────────────────────────────────────────────────────────
+async function fetchStats(){
+  const r=await fetch('/api/admin/stats'); return r.json();
+}
+async function fetchParticipantes(q='',status=''){
+  const url=new URL('/api/admin/participantes',location.origin);
+  if(q) url.searchParams.set('q',q);
+  if(status) url.searchParams.set('status',status);
+  const r=await fetch(url); todos=await r.json();
+  return todos;
+}
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────
+async function renderDashboard(){
+  const data=await fetchStats();
+  quartosAdmin=data.quartos;
+  document.getElementById('s-total').textContent=data.total;
+  document.getElementById('s-ci').textContent=data.checkin;
+  document.getElementById('s-ocup').textContent=data.ocupados;
+  document.getElementById('s-lotado').textContent=data.lotados;
+  document.getElementById('s-docs').textContent=data.com_docs;
+  renderQuartoCards('dash-quartos',data.quartos);
+}
+
+function quartoCorNum(q){
+  return q.cor==='laranja'?'#FF9A40':q.cor==='roxo'?'#C39BD3':'#58D68D';
+}
+
+function renderQuartoCards(containerId,quartos){
+  const el=document.getElementById(containerId);
+  el.innerHTML=quartos.map(q=>{
+    const pct=Math.round((q.ocupados/q.capacidade)*100);
+    const cor=quartoCorNum(q);
+    const barCor=q.vagas<=0?'var(--danger)':q.vagas<=2?'#FFB800':cor;
+    return `<div class="quarto-card">
+      <div class="q-num" style="color:${cor}">${q.num}</div>
+      <div class="q-nome">${q.genero} ${q.grupo}</div>
+      <div class="q-barra-wrap"><div class="q-barra" style="width:${pct}%;background:${barCor}"></div></div>
+      <div class="q-vagas-txt" style="color:${barCor}">${q.ocupados}/${q.capacidade}</div>
+    </div>`;
+  }).join('');
+}
+
+async function renderQuartosAdmin(){
+  if(!quartosAdmin.length){ const d=await fetchStats(); quartosAdmin=d.quartos; }
+  renderQuartoCards('quartos-grid',quartosAdmin);
+}
+
+// ─── Tabela participantes ─────────────────────────────────────────────────────
+async function renderTabela(){
+  const q=(document.getElementById('search')?.value||'').toLowerCase();
+  const st=document.getElementById('filtro-status')?.value||'';
+  await fetchParticipantes(q,st);
+  const tb=document.getElementById('tabela-body');
+  if(!todos.length){tb.innerHTML='<tr><td colspan="7"><div class="empty-msg">Nenhum participante.</div></td></tr>';return;}
+  tb.innerHTML=todos.map(p=>{
+    const stCls=p.checkin==='Sim'?'badge-ci':p.status==='Cancelado'?'badge-cancel':'badge-ok';
+    const stTxt=p.checkin==='Sim'?'✅ Check-in':p.status==='Cancelado'?'❌ Cancelado':'✔ Confirmado';
+    return `<tr>
+      <td style="font-family:'Bebas Neue';font-size:14px;letter-spacing:1px;color:var(--light)">${p.id}</td>
+      <td><div style="font-weight:800">${p.nome}</div><div style="color:var(--muted);font-size:11px">${p.idade||''}${p.cidade?` · ${p.cidade}`:''}</div></td>
+      <td><div>${p.email}</div><div style="color:var(--muted);font-size:11px">${p.telefone}</div></td>
+      <td style="font-size:11px;color:var(--muted)">${p.dias||'—'}</td>
+      <td style="font-size:12px;font-weight:700">${p.quarto_nome||'—'}</td>
+      <td><span class="badge ${stCls}">${stTxt}</span></td>
+      <td>
+        <button class="act-btn" onclick="editarInscrito('${p.id}')">✏️ Editar</button>
+        ${p.checkin!=='Sim'&&p.status!=='Cancelado'?`<button class="act-btn" onclick="checkinDireto('${p.id}')">✅ CI</button>`:''}
+        <button class="act-btn danger" onclick="abrirConfirm('${p.id}')">⋯</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── Tabela documentos ────────────────────────────────────────────────────────
+async function renderTabelaAnexos(){
+  const q=(document.getElementById('search-anx')?.value||'').toLowerCase();
+  const tipo=document.getElementById('filtro-anx')?.value||'';
+  await fetchParticipantes(q,'');
+  const tb=document.getElementById('tabela-anexos-body');
+  if(!todos.length){tb.innerHTML='<tr><td colspan="7"><div class="empty-msg">Nenhum participante.</div></td></tr>';return;}
+  const TIPOS=['doc_participante','doc_responsavel','autorizacao','atestado','comunicacao'];
+  const docCell=(p,t)=>{
+    if(tipo&&tipo!==t) return '<td style="color:var(--border)">—</td>';
+    const f=p.docs?.[t]||'';
+    return f
+      ? `<td><a href="/uploads/${f}" target="_blank" class="doc-badge">${f.split('.').pop().toUpperCase()}</a></td>`
+      : `<td><span class="doc-badge empty">Sem doc</span></td>`;
+  };
+  tb.innerHTML=todos.map(p=>`<tr>
+    <td><div style="font-weight:800">${p.nome}</div><div style="color:var(--muted);font-size:11px">${p.id}</div></td>
+    ${TIPOS.map(t=>docCell(p,t)).join('')}
+    <td><button class="act-btn" onclick="editarInscrito('${p.id}')">✏️ Editar</button></td>
+  </tr>`).join('');
+}
+
+// ─── Modal inscrito ───────────────────────────────────────────────────────────
+let quartosSelectData=[];
+
+async function carregarQuartosSelect(){
+  const r=await fetch('/api/quartos'); quartosSelectData=await r.json();
+}
+
+function popularSelectQuartos(selId=''){
+  const sel=document.getElementById('m-quarto');
+  const grupos=[
+    {label:'── Meninas Laranja ──',fn:q=>q.genero==='Meninas'&&q.cor==='laranja'},
+    {label:'── Meninas Roxo ──',  fn:q=>q.genero==='Meninas'&&q.cor==='roxo'},
+    {label:'── Meninas Verde ──', fn:q=>q.genero==='Meninas'&&q.cor==='verde'},
+    {label:'── Meninos Laranja ──',fn:q=>q.genero==='Meninos'&&q.cor==='laranja'},
+    {label:'── Meninos Roxo ──',  fn:q=>q.genero==='Meninos'&&q.cor==='roxo'},
+    {label:'── Meninos Verde ──', fn:q=>q.genero==='Meninos'&&q.cor==='verde'},
+  ];
+  sel.innerHTML='<option value="">Selecione um quarto</option>';
+  grupos.forEach(({label,fn})=>{
+    const h=document.createElement('option');
+    h.disabled=true; h.textContent=label; sel.appendChild(h);
+    quartosSelectData.filter(fn).forEach(q=>{
+      const disp=q.vagas>0||q.id===selId;
+      const o=document.createElement('option');
+      o.value=q.id; o.selected=q.id===selId; o.disabled=!disp;
+      o.textContent=`  Quarto ${q.num}${q.vagas<=0&&q.id!==selId?' (Lotado)':` · ${q.vagas} vagas`}`;
+      sel.appendChild(o);
+    });
+  });
+}
+
+function toggleDia(d){
+  const btn=document.getElementById('dia-'+d);
+  if(diasSel.includes(d)){ diasSel=diasSel.filter(x=>x!==d); btn.classList.remove('on'); }
+  else { diasSel.push(d); btn.classList.add('on'); }
+}
+
+async function abrirModalNovo(){
+  editandoId=null; diasSel=[];
+  document.getElementById('modal-inscrito-title').textContent='Novo Inscrito';
+  ['m-nome','m-idade','m-email','m-telefone','m-cidade'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('m-status-wrap').style.display='none';
+  ['sex','sab','dom'].forEach(d=>document.getElementById('dia-'+d).classList.remove('on'));
+  await carregarQuartosSelect(); popularSelectQuartos();
+  document.getElementById('modal-inscrito').classList.add('open');
+}
+
+async function editarInscrito(tid){
+  await fetchParticipantes();
+  const p=todos.find(x=>x.id===tid); if(!p) return;
+  editandoId=tid;
+  document.getElementById('modal-inscrito-title').textContent='Editar Inscrito';
+  document.getElementById('m-nome').value=p.nome||'';
+  document.getElementById('m-idade').value=p.idade||'';
+  document.getElementById('m-email').value=p.email||'';
+  document.getElementById('m-telefone').value=p.telefone||'';
+  document.getElementById('m-cidade').value=p.cidade||'';
+  document.getElementById('m-status').value=p.status||'Confirmado';
+  document.getElementById('m-status-wrap').style.display='block';
+  // Dias
+  diasSel=[];
+  ['sex','sab','dom'].forEach(d=>document.getElementById('dia-'+d).classList.remove('on'));
+  if(p.dias){
+    if(p.dias.includes('Sexta')){ diasSel.push('sex'); document.getElementById('dia-sex').classList.add('on'); }
+    if(p.dias.includes('Sábado')){ diasSel.push('sab'); document.getElementById('dia-sab').classList.add('on'); }
+    if(p.dias.includes('Domingo')){ diasSel.push('dom'); document.getElementById('dia-dom').classList.add('on'); }
+  }
+  await carregarQuartosSelect(); popularSelectQuartos(p.quarto_id||'');
+  document.getElementById('modal-inscrito').classList.add('open');
+}
+
+function fecharModalInscrito(){ document.getElementById('modal-inscrito').classList.remove('open'); }
+document.getElementById('modal-inscrito').addEventListener('click',e=>{ if(e.target===e.currentTarget) fecharModalInscrito(); });
+
+async function salvarInscrito(){
+  const nome=document.getElementById('m-nome').value.trim();
+  const email=document.getElementById('m-email').value.trim();
+  const tel=document.getElementById('m-telefone').value.trim();
+  const qid=document.getElementById('m-quarto').value;
+  if(!nome||!email||!tel||!qid){ toast('Preencha Nome, E-mail, Telefone e Quarto.','err'); return; }
+
+  const payload={
+    nome, email, telefone:tel, idade:document.getElementById('m-idade').value.trim(),
+    cidade:document.getElementById('m-cidade').value.trim(),
+    quarto_id:qid, dias:diasSel,
+    status:document.getElementById('m-status').value||'Confirmado'
+  };
+
+  let resp;
+  if(editandoId){
+    resp=await fetch(`/api/admin/participante/${editandoId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  } else {
+    resp=await fetch('/api/admin/participante',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  }
+  if(!resp.ok){ const e=await resp.json(); toast(e.error||'Erro ao salvar','err'); return; }
+  toast(editandoId?'Inscrito atualizado!':'Novo inscrito adicionado!','ok');
+  fecharModalInscrito();
+  await renderDashboard();
+  renderTabela();
+}
+
+// ─── Check-in ─────────────────────────────────────────────────────────────────
+async function fazerCheckin(){
+  const input=document.getElementById('ci-input');
+  const tid=input.value.trim().toUpperCase();
+  const box=document.getElementById('ci-result');
+  box.style.display='block';
+  if(!tid){ box.className='checkin-result err'; box.innerHTML='<h3 style="color:var(--danger)">❌ Digite o código.</h3>'; return; }
+  const resp=await fetch('/api/admin/checkin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:tid})});
+  const data=await resp.json();
+  if(resp.status===404){ box.className='checkin-result err'; box.innerHTML=`<h3 style="color:var(--danger)">❌ Participante não encontrado</h3><p style="color:var(--muted);font-size:13px;margin-top:6px">Código: ${tid}</p>`; return; }
+  if(resp.status===409){ box.className='checkin-result err'; box.innerHTML=`<h3 style="color:var(--danger)">⚠️ Check-in já realizado</h3><p style="color:var(--muted);font-size:13px;margin-top:6px">${data.nome}</p>`; return; }
+  if(resp.status===410){ box.className='checkin-result err'; box.innerHTML='<h3 style="color:var(--danger)">❌ Inscrição cancelada</h3>'; return; }
+  const hora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  box.className='checkin-result ok';
+  box.innerHTML=`<h3 style="color:var(--success)">✅ Check-in Confirmado!</h3><p style="margin-top:8px"><strong>${data.nome}</strong></p><p style="color:var(--muted);font-size:13px;margin-top:4px">Quarto: ${data.quarto_nome} · ${hora}</p>`;
+  ciHistory.unshift({nome:data.nome,quarto:data.quarto_nome,hora,id:tid});
+  document.getElementById('ci-history').innerHTML=
+    `<div style="font-family:'Bebas Neue';font-size:18px;color:var(--muted);letter-spacing:1px;margin-bottom:12px">Histórico desta sessão</div>`+
+    ciHistory.map(x=>`<div class="ci-item"><div><div class="ci-nome">${x.nome}</div><div class="ci-detalhe">${x.id} · ${x.quarto}</div></div><div class="ci-hora">${x.hora}</div></div>`).join('');
+  input.value='';
+  toast('✅ Check-in: '+data.nome,'ok');
+  renderDashboard();
+}
+
+function checkinDireto(tid){
+  document.getElementById('ci-input').value=tid;
+  goPage('checkin');
+  setTimeout(fazerCheckin,80);
+}
+
+// ─── Cancelar / Excluir ───────────────────────────────────────────────────────
+function abrirConfirm(tid){
+  const p=todos.find(x=>x.id===tid); if(!p) return;
+  _confirmTid=tid;
+  document.getElementById('confirm-nome-txt').textContent=`${p.nome} (${tid})`;
+  document.getElementById('modal-confirm').classList.add('open');
+}
+function fecharConfirm(){ document.getElementById('modal-confirm').classList.remove('open'); _confirmTid=null; }
+document.getElementById('modal-confirm').addEventListener('click',e=>{ if(e.target===e.currentTarget) fecharConfirm(); });
+
+async function confirmarAcao(acao){
+  const tid=_confirmTid;
+  if(!tid) return;
+  if(acao==='cancelar'){
+    await fetch(`/api/admin/participante/${tid}/cancelar`,{method:'POST'});
+    toast('Inscrição cancelada.','ok');
+  } else if(acao==='excluir'){
+    await fetch(`/api/admin/participante/${tid}`,{method:'DELETE'});
+    toast('Inscrito excluído.','ok');
+  }
+  fecharConfirm();
+  await renderDashboard();
+  renderTabela();
+}
+
+// ─── Exportar CSV ─────────────────────────────────────────────────────────────
+function exportarCSV(){ window.open('/api/admin/exportar-csv','_blank'); }
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+renderDashboard();
+{% endblock %}
