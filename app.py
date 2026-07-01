@@ -36,9 +36,14 @@ from psycopg2 import pool as pg_pool
 # Formato: postgresql://usuario:senha@host:porta/banco
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
-# Railway/Heroku usam "postgres://" (sem ql), psycopg2 precisa de "postgresql://"
+# Render/Railway/Heroku às vezes entregam "postgres://" — psycopg2 precisa de "postgresql://"
 if DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+
+# Garantir sslmode=require para conexões na nuvem (Render exige SSL)
+if DATABASE_URL and 'sslmode' not in DATABASE_URL:
+    sep = '&' if '?' in DATABASE_URL else '?'
+    DATABASE_URL = DATABASE_URL + sep + 'sslmode=require'
 
 # Pool de conexões: mínimo 1, máximo 10 simultâneas
 _pool = None
@@ -48,10 +53,13 @@ def get_pool():
     if _pool is None:
         if not DATABASE_URL:
             raise RuntimeError(
-                "Variável de ambiente DATABASE_URL não definida.\n"
-                "postgresql://ferias_db_8pps_user:159GibvYF2L6x0MriRvjr2EvNMeIZXec@dpg-d92o75gk1i2s73ctfm60-a.oregon-postgres.render.com/ferias_db_8pps"
+                "DATABASE_URL nao definida. No Render: "
+                "copie a Internal Database URL do banco e cole em Environment > DATABASE_URL"
             )
+        safe_url = DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else '???'
+        print(f"Conectando ao PostgreSQL: ...@{safe_url}")
         _pool = pg_pool.ThreadedConnectionPool(1, 10, DATABASE_URL)
+        print("Pool de conexoes criado com sucesso.")
     return _pool
 
 @contextmanager
@@ -124,13 +132,24 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS documentos (
                 id                  SERIAL PRIMARY KEY,
-                ticket_id           TEXT NOT NULL REFERENCES participantes(id) ON DELETE CASCADE,
+                ticket_id           TEXT NOT NULL UNIQUE REFERENCES participantes(id) ON DELETE CASCADE,
                 doc_participante    TEXT DEFAULT '',
                 doc_responsavel     TEXT DEFAULT '',
                 autorizacao         TEXT DEFAULT '',
                 atestado            TEXT DEFAULT '',
                 comunicacao         TEXT DEFAULT ''
             );
+
+            -- Adiciona constraint UNIQUE caso a tabela já exista sem ela
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'documentos_ticket_id_key'
+                ) THEN
+                    ALTER TABLE documentos ADD CONSTRAINT documentos_ticket_id_key UNIQUE (ticket_id);
+                END IF;
+            END $$;
             """)
     print("✅  Banco PostgreSQL inicializado com sucesso.")
 
@@ -570,10 +589,18 @@ def health():
 # ══════════════════════════════════════════════════════════════════════════════
 #  ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
+# Chamado tanto pelo gunicorn quanto pelo python direto
+with app.app_context():
+    try:
+        init_db()
+    except Exception as e:
+        print(f"AVISO init_db: {e}")
+
 if __name__ == '__main__':
-    init_db()
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV', 'production') == 'development'
     print(f"✅  Férias Mil Grau — PostgreSQL — http://localhost:{port}")
     print(f"🔐  Admin: http://localhost:{port}/admin  |  {ADMIN_USER} / {ADMIN_PASS}")
     app.run(host='0.0.0.0', port=port, debug=debug)
+
+  
