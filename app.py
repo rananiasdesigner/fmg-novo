@@ -49,7 +49,7 @@ def get_pool():
         if not DATABASE_URL:
             raise RuntimeError(
                 "Variável de ambiente DATABASE_URL não definida.\n"
-                "Exemplo: postgresql://user:senha@host:5432/ferias_db"
+                "postgresql://ferias_db_8pps_user:159GibvYF2L6x0MriRvjr2EvNMeIZXec@dpg-d92o75gk1i2s73ctfm60-a.oregon-postgres.render.com/ferias_db_8pps"
             )
         _pool = pg_pool.ThreadedConnectionPool(1, 10, DATABASE_URL)
     return _pool
