@@ -502,13 +502,12 @@ def api_admin_participantes():
 
     result = []
     for r in rows:
-        # monta dict de docs: True se tem arquivo, False se não
         r['docs'] = {
-            'doc_participante': bool(r.pop('doc_participante_nome', '')),
-            'doc_responsavel':  bool(r.pop('doc_responsavel_nome', '')),
-            'autorizacao':      bool(r.pop('autorizacao_nome', '')),
-            'atestado':         bool(r.pop('atestado_nome', '')),
-            'comunicacao':      bool(r.pop('comunicacao_nome', '')),
+            'doc_participante': r.pop('doc_participante', '') or '',
+            'doc_responsavel':  r.pop('doc_responsavel', '') or '',
+            'autorizacao':      r.pop('autorizacao', '') or '',
+            'atestado':         r.pop('atestado', '') or '',
+            'comunicacao':      r.pop('comunicacao', '') or '',
         }
         result.append(r)
     return jsonify(result)
@@ -556,7 +555,7 @@ def api_admin_editar(tid):
     quartos   = get_quartos_com_vagas()
     q_info    = next((q for q in quartos if q['id'] == quarto_id), None)
     qNome     = f"Quarto {q_info['num']} — {q_info['genero']} {q_info['grupo']}" if q_info else '—'
-    DIAS      = {'sex': 'Sexta 01/08', 'sab': 'Sábado 02/08', 'dom': 'Domingo 03/08'}
+    DIAS      = {'sex': 'Sexta 31/07', 'sab': 'Sábado 01/08', 'dom': 'Domingo 02/08'}
     dias_str  = ', '.join(DIAS[d] for d in data.get('dias', []) if d in DIAS) or data.get('dias_str', '—')
     execute(
         "UPDATE participantes SET nome=?,email=?,telefone=?,idade=?,cidade=?,"
