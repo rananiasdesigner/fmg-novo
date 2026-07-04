@@ -105,80 +105,74 @@ def init_db():
     """Cria/atualiza as tabelas. Roda automaticamente ao iniciar."""
     with get_db() as conn:
         with conn.cursor() as cur:
+
+            # Tabela principal
             cur.execute("""
-            CREATE TABLE IF NOT EXISTS participantes (
-                id          TEXT PRIMARY KEY,
-                nome        TEXT NOT NULL,
-                email       TEXT NOT NULL,
-                telefone    TEXT NOT NULL,
-                idade       TEXT DEFAULT '',
-                cidade      TEXT DEFAULT '',
-                quarto_id   TEXT DEFAULT '',
-                quarto_nome TEXT DEFAULT '',
-                dias        TEXT DEFAULT '',
-                checkin     TEXT DEFAULT 'Não',
-                status      TEXT DEFAULT 'Confirmado',
-                data        TEXT DEFAULT ''
-            );
-
-            -- Tabela de documentos: arquivo salvo como BYTEA no banco
-            -- evita qualquer dependência de disco (compatível com Render/Railway)
-            CREATE TABLE IF NOT EXISTS documentos (
-                id                      SERIAL PRIMARY KEY,
-                ticket_id               TEXT NOT NULL UNIQUE
-                                        REFERENCES participantes(id) ON DELETE CASCADE,
-                doc_participante_nome   TEXT DEFAULT '',
-                doc_participante_mime   TEXT DEFAULT '',
-                doc_participante_dados  BYTEA,
-                doc_responsavel_nome    TEXT DEFAULT '',
-                doc_responsavel_mime    TEXT DEFAULT '',
-                doc_responsavel_dados   BYTEA,
-                autorizacao_nome        TEXT DEFAULT '',
-                autorizacao_mime        TEXT DEFAULT '',
-                autorizacao_dados       BYTEA,
-                atestado_nome           TEXT DEFAULT '',
-                atestado_mime           TEXT DEFAULT '',
-                atestado_dados          BYTEA,
-                comunicacao_nome        TEXT DEFAULT '',
-                comunicacao_mime        TEXT DEFAULT '',
-                comunicacao_dados       BYTEA
-            );
-
-            -- Migração: garante constraint UNIQUE se tabela já existia antes
-            DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'documentos_ticket_id_key'
-                ) THEN
-                    ALTER TABLE documentos
-                    ADD CONSTRAINT documentos_ticket_id_key UNIQUE (ticket_id);
-                END IF;
-            END $$;
-
-            -- Migração: adiciona colunas BYTEA se tabela antiga não as tem
-            DO $$
-            DECLARE col TEXT;
-            BEGIN
-                FOREACH col IN ARRAY ARRAY[
-                    'doc_participante_nome','doc_participante_mime','doc_participante_dados',
-                    'doc_responsavel_nome','doc_responsavel_mime','doc_responsavel_dados',
-                    'autorizacao_nome','autorizacao_mime','autorizacao_dados',
-                    'atestado_nome','atestado_mime','atestado_dados',
-                    'comunicacao_nome','comunicacao_mime','comunicacao_dados'
-                ] LOOP
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name='documentos' AND column_name=col
-                    ) THEN
-                        EXECUTE format('ALTER TABLE documentos ADD COLUMN %I '
-                            || CASE WHEN col LIKE '%%_dados' THEN 'BYTEA' ELSE 'TEXT DEFAULT ''' '''' END,
-                            col);
-                    END IF;
-                END LOOP;
-            END $$;
+                CREATE TABLE IF NOT EXISTS participantes (
+                    id          TEXT PRIMARY KEY,
+                    nome        TEXT NOT NULL,
+                    email       TEXT NOT NULL,
+                    telefone    TEXT NOT NULL,
+                    idade       TEXT DEFAULT '',
+                    cidade      TEXT DEFAULT '',
+                    quarto_id   TEXT DEFAULT '',
+                    quarto_nome TEXT DEFAULT '',
+                    dias        TEXT DEFAULT '',
+                    checkin     TEXT DEFAULT 'Nao',
+                    status      TEXT DEFAULT 'Confirmado',
+                    data        TEXT DEFAULT ''
+                )
             """)
+
+            # Tabela de documentos — arquivos em BYTEA (sem disco)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS documentos (
+                    id                      SERIAL PRIMARY KEY,
+                    ticket_id               TEXT NOT NULL UNIQUE
+                                            REFERENCES participantes(id) ON DELETE CASCADE,
+                    doc_participante_nome   TEXT DEFAULT '',
+                    doc_participante_mime   TEXT DEFAULT '',
+                    doc_participante_dados  BYTEA,
+                    doc_responsavel_nome    TEXT DEFAULT '',
+                    doc_responsavel_mime    TEXT DEFAULT '',
+                    doc_responsavel_dados   BYTEA,
+                    autorizacao_nome        TEXT DEFAULT '',
+                    autorizacao_mime        TEXT DEFAULT '',
+                    autorizacao_dados       BYTEA,
+                    atestado_nome           TEXT DEFAULT '',
+                    atestado_mime           TEXT DEFAULT '',
+                    atestado_dados          BYTEA,
+                    comunicacao_nome        TEXT DEFAULT '',
+                    comunicacao_mime        TEXT DEFAULT '',
+                    comunicacao_dados       BYTEA
+                )
+            """)
+
+            # Migracao: adiciona colunas novas em bancos antigos (ADD COLUMN IF NOT EXISTS)
+            colunas_migrar = [
+                ('doc_participante_nome',  "TEXT DEFAULT ''"),
+                ('doc_participante_mime',  "TEXT DEFAULT ''"),
+                ('doc_participante_dados', "BYTEA"),
+                ('doc_responsavel_nome',   "TEXT DEFAULT ''"),
+                ('doc_responsavel_mime',   "TEXT DEFAULT ''"),
+                ('doc_responsavel_dados',  "BYTEA"),
+                ('autorizacao_nome',       "TEXT DEFAULT ''"),
+                ('autorizacao_mime',       "TEXT DEFAULT ''"),
+                ('autorizacao_dados',      "BYTEA"),
+                ('atestado_nome',          "TEXT DEFAULT ''"),
+                ('atestado_mime',          "TEXT DEFAULT ''"),
+                ('atestado_dados',         "BYTEA"),
+                ('comunicacao_nome',       "TEXT DEFAULT ''"),
+                ('comunicacao_mime',       "TEXT DEFAULT ''"),
+                ('comunicacao_dados',      "BYTEA"),
+            ]
+            for col, tipo in colunas_migrar:
+                cur.execute(
+                    "ALTER TABLE documentos ADD COLUMN IF NOT EXISTS " + col + " " + tipo
+                )
+
     print("Banco PostgreSQL inicializado com sucesso.")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  QUARTOS
