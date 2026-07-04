@@ -572,10 +572,15 @@ def api_exportar_csv():
         headers={'Content-Disposition': 'attachment; filename=inscritos_fmg.csv'}
     )
 
-@app.route('/uploads/<filename>')
+@app.route('/admin/download/<filename>')
 @login_required
 def serve_upload(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
+    """Serve arquivos de upload apenas para admins logados."""
+    safe_name = os.path.basename(filename)  # evita path traversal
+    filepath = os.path.join(UPLOAD_FOLDER, safe_name)
+    if not os.path.exists(filepath):
+        abort(404)
+    return send_from_directory(UPLOAD_FOLDER, safe_name, as_attachment=False)
 
 # ── Health check (Railway/Render usam isso) ───────────────────────────────────
 @app.route('/health')
