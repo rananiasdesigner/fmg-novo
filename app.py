@@ -1,6 +1,5 @@
 """
-Férias Mil Grau — Sistema de Inscrição v5 (Python/Flask + PostgreSQL)
-Arquivos de documentos armazenados no banco como BYTEA — sem dependência de disco.
+Férias Mil Grau — Sistema de Inscrição v4 (Python/Flask + PostgreSQL)
 Compatível com Railway, Render, Heroku e qualquer VPS com PostgreSQL.
 """
 
@@ -33,17 +32,20 @@ import psycopg2
 import psycopg2.extras
 from psycopg2 import pool as pg_pool
 
+# DATABASE_URL vem da variável de ambiente definida na plataforma de deploy.
+# Formato: postgresql://usuario:senha@host:porta/banco
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
-# Render/Railway/Heroku às vezes entregam "postgres://"
+# Render/Railway/Heroku às vezes entregam "postgres://" — psycopg2 precisa de "postgresql://"
 if DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
-# SSL obrigatório na nuvem
+# Garantir sslmode=require para conexões na nuvem (Render exige SSL)
 if DATABASE_URL and 'sslmode' not in DATABASE_URL:
     sep = '&' if '?' in DATABASE_URL else '?'
     DATABASE_URL = DATABASE_URL + sep + 'sslmode=require'
 
+# Pool de conexões: mínimo 1, máximo 10 simultâneas
 _pool = None
 
 def get_pool():
@@ -54,14 +56,15 @@ def get_pool():
                 "DATABASE_URL nao definida. No Render: "
                 "copie a Internal Database URL do banco e cole em Environment > DATABASE_URL"
             )
-        safe = DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else '???'
-        print(f"Conectando ao PostgreSQL: ...@{safe}")
+        safe_url = DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else '???'
+        print(f"Conectando ao PostgreSQL: ...@{safe_url}")
         _pool = pg_pool.ThreadedConnectionPool(1, 10, DATABASE_URL)
-        print("Pool de conexoes criado.")
+        print("Pool de conexoes criado com sucesso.")
     return _pool
 
 @contextmanager
 def get_db():
+    """Context manager que entrega uma conexão do pool e faz commit/rollback automático."""
     conn = get_pool().getconn()
     try:
         yield conn
@@ -73,7 +76,10 @@ def get_db():
         get_pool().putconn(conn)
 
 def query(sql, params=(), *, fetch='all', conn=None):
+    """Helper: executa SQL e retorna lista de dicts (fetch='all') ou dict (fetch='one') ou None."""
+    # Converte ? → %s (SQLite → PostgreSQL)
     pg_sql = sql.replace('?', '%s')
+
     def _run(c):
         with c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(pg_sql, params)
@@ -85,13 +91,16 @@ def query(sql, params=(), *, fetch='all', conn=None):
             elif fetch == 'scalar':
                 row = cur.fetchone()
                 return list(row.values())[0] if row else None
-            return None
+            else:
+                return None   # INSERT/UPDATE/DELETE sem retorno
+
     if conn:
         return _run(conn)
     with get_db() as c:
         return _run(c)
 
 def execute(sql, params=(), *, conn=None):
+    """Helper: executa INSERT/UPDATE/DELETE (sem retorno de linhas)."""
     pg_sql = sql.replace('?', '%s')
     if conn:
         with conn.cursor() as cur:
@@ -102,7 +111,7 @@ def execute(sql, params=(), *, conn=None):
             cur.execute(pg_sql, params)
 
 def init_db():
-    """Cria/atualiza as tabelas. Roda automaticamente ao iniciar."""
+    """Cria as tabelas se ainda não existirem."""
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -121,64 +130,28 @@ def init_db():
                 data        TEXT DEFAULT ''
             );
 
-            -- Tabela de documentos: arquivo salvo como BYTEA no banco
-            -- evita qualquer dependência de disco (compatível com Render/Railway)
             CREATE TABLE IF NOT EXISTS documentos (
-                id                      SERIAL PRIMARY KEY,
-                ticket_id               TEXT NOT NULL UNIQUE
-                                        REFERENCES participantes(id) ON DELETE CASCADE,
-                doc_participante_nome   TEXT DEFAULT '',
-                doc_participante_mime   TEXT DEFAULT '',
-                doc_participante_dados  BYTEA,
-                doc_responsavel_nome    TEXT DEFAULT '',
-                doc_responsavel_mime    TEXT DEFAULT '',
-                doc_responsavel_dados   BYTEA,
-                autorizacao_nome        TEXT DEFAULT '',
-                autorizacao_mime        TEXT DEFAULT '',
-                autorizacao_dados       BYTEA,
-                atestado_nome           TEXT DEFAULT '',
-                atestado_mime           TEXT DEFAULT '',
-                atestado_dados          BYTEA,
-                comunicacao_nome        TEXT DEFAULT '',
-                comunicacao_mime        TEXT DEFAULT '',
-                comunicacao_dados       BYTEA
+                id                  SERIAL PRIMARY KEY,
+                ticket_id           TEXT NOT NULL UNIQUE REFERENCES participantes(id) ON DELETE CASCADE,
+                doc_participante    TEXT DEFAULT '',
+                doc_responsavel     TEXT DEFAULT '',
+                autorizacao         TEXT DEFAULT '',
+                atestado            TEXT DEFAULT '',
+                comunicacao         TEXT DEFAULT ''
             );
 
-            -- Migração: garante constraint UNIQUE se tabela já existia antes
+            -- Adiciona constraint UNIQUE caso a tabela já exista sem ela
             DO $$
             BEGIN
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = 'documentos_ticket_id_key'
                 ) THEN
-                    ALTER TABLE documentos
-                    ADD CONSTRAINT documentos_ticket_id_key UNIQUE (ticket_id);
+                    ALTER TABLE documentos ADD CONSTRAINT documentos_ticket_id_key UNIQUE (ticket_id);
                 END IF;
             END $$;
-
-            -- Migração: adiciona colunas BYTEA se tabela antiga não as tem
-            DO $$
-            DECLARE col TEXT;
-            BEGIN
-                FOREACH col IN ARRAY ARRAY[
-                    'doc_participante_nome','doc_participante_mime','doc_participante_dados',
-                    'doc_responsavel_nome','doc_responsavel_mime','doc_responsavel_dados',
-                    'autorizacao_nome','autorizacao_mime','autorizacao_dados',
-                    'atestado_nome','atestado_mime','atestado_dados',
-                    'comunicacao_nome','comunicacao_mime','comunicacao_dados'
-                ] LOOP
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name='documentos' AND column_name=col
-                    ) THEN
-                        EXECUTE format('ALTER TABLE documentos ADD COLUMN %I '
-                            || CASE WHEN col LIKE '%%_dados' THEN 'BYTEA' ELSE 'TEXT DEFAULT ''' '''' END,
-                            col);
-                    END IF;
-                END LOOP;
-            END $$;
             """)
-    print("Banco PostgreSQL inicializado com sucesso.")
+    print("✅  Banco PostgreSQL inicializado com sucesso.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  QUARTOS
@@ -218,22 +191,19 @@ def get_quartos_com_vagas():
 #  HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 ALLOWED_EXT = {'pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'}
-MIME_MAP = {
-    'pdf': 'application/pdf', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
-    'png': 'image/png', 'doc': 'application/msword',
-    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT
 
 def gen_id():
+    """Gera ID único garantido pelo banco (tenta até encontrar um livre)."""
     chars = string.ascii_uppercase + string.digits
     for _ in range(20):
         tid = 'FMG-' + ''.join(random.choices(chars, k=6))
-        if not query("SELECT id FROM participantes WHERE id=?", (tid,), fetch='one'):
+        exists = query("SELECT id FROM participantes WHERE id=?", (tid,), fetch='one')
+        if not exists:
             return tid
-    raise RuntimeError("Nao foi possivel gerar ID unico.")
+    raise RuntimeError("Não foi possível gerar ID único.")
 
 def format_br(dt: datetime):
     return dt.strftime('%d/%m/%Y %H:%M')
@@ -243,14 +213,17 @@ def format_br(dt: datetime):
 # ══════════════════════════════════════════════════════════════════════════════
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'fmg-secret-mude-em-producao-2026')
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
 
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
+PDF_FOLDER    = os.path.join(os.path.dirname(__file__), 'static', 'pdf')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PDF_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER']        = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH']   = 10 * 1024 * 1024  # 10 MB
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
 ADMIN_USER = os.environ.get('ADMIN_USER', 'admin')
 ADMIN_PASS = os.environ.get('ADMIN_PASS', 'admin123')
-
-# PDF ainda usa disco (temporário, gerado na hora)
-PDF_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'pdf')
-os.makedirs(PDF_FOLDER, exist_ok=True)
 
 def login_required(f):
     @wraps(f)
@@ -309,85 +282,51 @@ def api_inscricao():
 
 @app.route('/api/anexo/upload', methods=['POST'])
 def api_upload():
-    """Recebe o arquivo e salva como BYTEA no PostgreSQL — sem uso de disco."""
     ticket_id = request.form.get('ticket_id', '').strip()
     tipo      = request.form.get('tipo', '').strip()
+    if not ticket_id or not tipo:
+        return jsonify(error='Parâmetros ausentes'), 400
+
     TIPOS_VALIDOS = ('doc_participante','doc_responsavel','autorizacao','atestado','comunicacao')
-    if not ticket_id or tipo not in TIPOS_VALIDOS:
-        return jsonify(error='Parâmetros inválidos'), 400
+    if tipo not in TIPOS_VALIDOS:
+        return jsonify(error='Tipo de documento inválido'), 400
 
     f = request.files.get('arquivo')
     if not f or not allowed_file(f.filename):
         return jsonify(error='Arquivo inválido ou formato não permitido'), 400
 
     ext      = f.filename.rsplit('.', 1)[1].lower()
-    nome_arq = secure_filename(f"{ticket_id}_{tipo}.{ext}")
-    mime     = MIME_MAP.get(ext, 'application/octet-stream')
-    dados    = f.read()  # bytes — vai para o BYTEA do banco
+    filename = secure_filename(f"{ticket_id}_{tipo}.{ext}")
+    f.save(os.path.join(UPLOAD_FOLDER, filename))
 
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(f"""
-                INSERT INTO documentos (ticket_id, {tipo}_nome, {tipo}_mime, {tipo}_dados)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (ticket_id) DO UPDATE
-                    SET {tipo}_nome  = EXCLUDED.{tipo}_nome,
-                        {tipo}_mime  = EXCLUDED.{tipo}_mime,
-                        {tipo}_dados = EXCLUDED.{tipo}_dados
-            """, (ticket_id, nome_arq, mime, psycopg2.Binary(dados)))
-
-    return jsonify(ok=True, filename=nome_arq)
-
-@app.route('/admin/arquivo/<ticket_id>/<tipo>')
-@login_required
-def baixar_arquivo(ticket_id, tipo):
-    """Serve o arquivo do banco diretamente para o admin — sem disco."""
-    TIPOS_VALIDOS = ('doc_participante','doc_responsavel','autorizacao','atestado','comunicacao')
-    if tipo not in TIPOS_VALIDOS:
-        abort(400)
-
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"SELECT {tipo}_nome, {tipo}_mime, {tipo}_dados "
-                f"FROM documentos WHERE ticket_id = %s",
-                (ticket_id,)
-            )
-            row = cur.fetchone()
-
-    if not row or not row[2]:  # sem dados
-        abort(404)
-
-    nome_arq, mime, dados = row
-    # dados pode ser memoryview (psycopg2) — converter para bytes
-    if isinstance(dados, memoryview):
-        dados = bytes(dados)
-
-    return Response(
-        dados,
-        mimetype=mime or 'application/octet-stream',
-        headers={
-            'Content-Disposition': f'inline; filename="{nome_arq}"',
-            'Content-Length': str(len(dados)),
-        }
+    # Usa INSERT ... ON CONFLICT (upsert) do PostgreSQL
+    execute(
+        f"""
+        INSERT INTO documentos (ticket_id, {tipo})
+        VALUES (?, ?)
+        ON CONFLICT (ticket_id) DO UPDATE SET {tipo} = EXCLUDED.{tipo}
+        """,
+        (ticket_id, filename)
     )
+    return jsonify(ok=True, filename=filename)
 
 @app.route('/api/pdf/<ticket_id>')
 def api_pdf(ticket_id):
     if not REPORTLAB_OK:
-        return jsonify(error='ReportLab não instalado.'), 501
+        return jsonify(error='ReportLab não instalado. Execute: pip install reportlab'), 501
+
     p = query("SELECT * FROM participantes WHERE id=?", (ticket_id,), fetch='one')
     if not p:
         abort(404)
-    buf = io.BytesIO()
-    _gerar_pdf(p, buf)
-    buf.seek(0)
-    return send_file(buf, as_attachment=True,
+
+    pdf_path = os.path.join(PDF_FOLDER, f"{ticket_id}.pdf")
+    _gerar_pdf(p, pdf_path)
+    return send_file(pdf_path, as_attachment=True,
                      download_name=f"inscricao_{ticket_id}.pdf",
                      mimetype='application/pdf')
 
-def _gerar_pdf(p, dest):
-    doc  = SimpleDocTemplate(dest, pagesize=A4,
+def _gerar_pdf(p, path):
+    doc  = SimpleDocTemplate(path, pagesize=A4,
                              leftMargin=2*cm, rightMargin=2*cm,
                              topMargin=2*cm, bottomMargin=2*cm)
     title_style = ParagraphStyle('title', fontSize=28, fontName='Helvetica-Bold',
@@ -402,10 +341,14 @@ def _gerar_pdf(p, dest):
     ]
     data = [
         ['Campo', 'Informação'],
-        ['Código', p['id']], ['Nome', p['nome']],
-        ['E-mail', p['email']], ['Telefone', p['telefone']],
-        ['Idade', p.get('idade') or '—'], ['Cidade', p.get('cidade') or '—'],
-        ['Quarto', p.get('quarto_nome') or '—'], ['Dias', p.get('dias') or '—'],
+        ['Código', p['id']],
+        ['Nome', p['nome']],
+        ['E-mail', p['email']],
+        ['Telefone', p['telefone']],
+        ['Idade', p.get('idade') or '—'],
+        ['Cidade', p.get('cidade') or '—'],
+        ['Quarto', p.get('quarto_nome') or '—'],
+        ['Dias', p.get('dias') or '—'],
         ['Status', p.get('status') or 'Confirmado'],
         ['Data de inscrição', p.get('data') or '—'],
     ]
@@ -457,21 +400,25 @@ def admin_logout():
 def admin_dashboard():
     return render_template('admin.html')
 
+# ── API Admin ─────────────────────────────────────────────────────────────────
+
 @app.route('/api/admin/stats')
 @login_required
 def api_admin_stats():
-    total    = query("SELECT COUNT(*) FROM participantes WHERE status!='Cancelado'", fetch='scalar')
-    checkin  = query("SELECT COUNT(*) FROM participantes WHERE checkin='Sim'", fetch='scalar')
+    total   = query("SELECT COUNT(*) FROM participantes WHERE status!='Cancelado'", fetch='scalar')
+    checkin = query("SELECT COUNT(*) FROM participantes WHERE checkin='Sim'", fetch='scalar')
     com_docs = query(
         "SELECT COUNT(DISTINCT p.id) FROM participantes p "
-        "JOIN documentos d ON p.id = d.ticket_id WHERE p.status != 'Cancelado'",
+        "JOIN documentos d ON p.id = d.ticket_id "
+        "WHERE p.status != 'Cancelado'",
         fetch='scalar'
     )
     quartos  = get_quartos_com_vagas()
+    ocupados = sum(q['ocupados'] for q in quartos)
+    lotados  = sum(1 for q in quartos if q['vagas'] <= 0)
     return jsonify(
-        total=total, checkin=checkin, com_docs=com_docs,
-        ocupados=sum(q['ocupados'] for q in quartos),
-        lotados=sum(1 for q in quartos if q['vagas'] <= 0),
+        total=total, checkin=checkin, ocupados=ocupados,
+        lotados=lotados, com_docs=com_docs,
         quartos=quartos
     )
 
@@ -481,11 +428,9 @@ def api_admin_participantes():
     q      = request.args.get('q', '').lower()
     status = request.args.get('status', '')
 
-    sql = """
-        SELECT p.*,
-               d.doc_participante_nome, d.doc_responsavel_nome,
-               d.autorizacao_nome,      d.atestado_nome,
-               d.comunicacao_nome
+    sql    = """
+        SELECT p.*, d.doc_participante, d.doc_responsavel,
+               d.autorizacao, d.atestado, d.comunicacao
         FROM participantes p
         LEFT JOIN documentos d ON p.id = d.ticket_id
         WHERE 1=1
@@ -508,13 +453,12 @@ def api_admin_participantes():
 
     result = []
     for r in rows:
-        # monta dict de docs: True se tem arquivo, False se não
         r['docs'] = {
-            'doc_participante': bool(r.pop('doc_participante_nome', '')),
-            'doc_responsavel':  bool(r.pop('doc_responsavel_nome', '')),
-            'autorizacao':      bool(r.pop('autorizacao_nome', '')),
-            'atestado':         bool(r.pop('atestado_nome', '')),
-            'comunicacao':      bool(r.pop('comunicacao_nome', '')),
+            'doc_participante': r.pop('doc_participante', '') or '',
+            'doc_responsavel':  r.pop('doc_responsavel', '') or '',
+            'autorizacao':      r.pop('autorizacao', '') or '',
+            'atestado':         r.pop('atestado', '') or '',
+            'comunicacao':      r.pop('comunicacao', '') or '',
         }
         result.append(r)
     return jsonify(result)
@@ -535,7 +479,7 @@ def api_admin_novo():
     if not q_info:
         return jsonify(error='Quarto inválido'), 400
 
-    DIAS     = {'sex': 'Sexta 01/08', 'sab': 'Sábado 02/08', 'dom': 'Domingo 03/08'}
+    DIAS = {'sex': 'Sexta 01/08', 'sab': 'Sábado 02/08', 'dom': 'Domingo 03/08'}
     dias_str = ', '.join(DIAS[d] for d in data.get('dias', []) if d in DIAS) or '—'
     qNome    = f"Quarto {q_info['num']} — {q_info['genero']} {q_info['grupo']}"
     tid      = gen_id()
@@ -582,7 +526,7 @@ def api_admin_cancelar(tid):
 @app.route('/api/admin/participante/<tid>', methods=['DELETE'])
 @login_required
 def api_admin_excluir(tid):
-    execute("DELETE FROM participantes WHERE id=?", (tid,))
+    execute("DELETE FROM participantes WHERE id=?", (tid,))   # CASCADE apaga documentos
     return jsonify(ok=True)
 
 @app.route('/api/admin/checkin', methods=['POST'])
@@ -603,9 +547,7 @@ def api_admin_checkin():
 @login_required
 def api_exportar_csv():
     rows = query(
-        "SELECT p.*, "
-        "  d.doc_participante_nome, d.doc_responsavel_nome, "
-        "  d.autorizacao_nome, d.atestado_nome, d.comunicacao_nome "
+        "SELECT p.*, d.doc_participante, d.doc_responsavel, d.autorizacao, d.atestado, d.comunicacao "
         "FROM participantes p LEFT JOIN documentos d ON p.id=d.ticket_id ORDER BY p.data DESC",
         fetch='all'
     )
@@ -620,11 +562,8 @@ def api_exportar_csv():
             r.get('idade',''), r.get('cidade',''),
             r.get('quarto_nome',''), r.get('dias',''),
             r.get('checkin',''), r.get('status',''), r.get('data',''),
-            '✓' if r.get('doc_participante_nome') else '',
-            '✓' if r.get('doc_responsavel_nome') else '',
-            '✓' if r.get('autorizacao_nome') else '',
-            '✓' if r.get('atestado_nome') else '',
-            '✓' if r.get('comunicacao_nome') else '',
+            r.get('doc_participante',''), r.get('doc_responsavel',''),
+            r.get('atestado',''), r.get('autorizacao',''), r.get('comunicacao',''),
         ])
     output.seek(0)
     return Response(
@@ -633,6 +572,17 @@ def api_exportar_csv():
         headers={'Content-Disposition': 'attachment; filename=inscritos_fmg.csv'}
     )
 
+@app.route('/admin/download/<filename>')
+@login_required
+def serve_upload(filename):
+    """Serve arquivos de upload apenas para admins logados."""
+    safe_name = os.path.basename(filename)  # evita path traversal
+    filepath = os.path.join(UPLOAD_FOLDER, safe_name)
+    if not os.path.exists(filepath):
+        abort(404)
+    return send_from_directory(UPLOAD_FOLDER, safe_name, as_attachment=False)
+
+# ── Health check (Railway/Render usam isso) ───────────────────────────────────
 @app.route('/health')
 def health():
     try:
@@ -642,8 +592,9 @@ def health():
         return jsonify(status='error', detail=str(e)), 503
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  STARTUP — roda tanto com gunicorn quanto com python app.py
+#  ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
+# Chamado tanto pelo gunicorn quanto pelo python direto
 with app.app_context():
     try:
         init_db()
@@ -651,10 +602,10 @@ with app.app_context():
         print(f"AVISO init_db: {e}")
 
 if __name__ == '__main__':
-    port  = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV', 'production') == 'development'
-    print(f"Ferias Mil Grau — http://localhost:{port}")
-    print(f"Admin: http://localhost:{port}/admin  |  {ADMIN_USER} / {ADMIN_PASS}")
+    print(f"✅  Férias Mil Grau — PostgreSQL — http://localhost:{port}")
+    print(f"🔐  Admin: http://localhost:{port}/admin  |  {ADMIN_USER} / {ADMIN_PASS}")
     app.run(host='0.0.0.0', port=port, debug=debug)
 
   
