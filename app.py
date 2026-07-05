@@ -285,7 +285,7 @@ def api_inscricao():
 
     tid   = gen_id()
     qNome = f"Quarto {q_info['num']} — {q_info['genero']} {q_info['grupo']}"
-    dias  = data.get('dias', 'Sexta 31/07, Sábado 01/08, Domingo 02/08')
+    dias  = data.get('dias', 'Sexta 01/08, Sábado 02/08, Domingo 03/08')
     now   = format_br(datetime.now())
 
     with get_db() as conn:
@@ -308,18 +308,18 @@ def api_upload():
     tipo      = request.form.get('tipo', '').strip()
     TIPOS_VALIDOS = ('doc_participante','doc_responsavel','autorizacao','atestado','comunicacao')
     if not ticket_id or tipo not in TIPOS_VALIDOS:
-        return jsonify(error='Parâmetros inválidos'), 400
+        return jsonify(error='Parametros invalidos'), 400
 
     f = request.files.get('arquivo')
     if not f or not allowed_file(f.filename):
-        return jsonify(error='Arquivo inválido ou formato não permitido'), 400
+        return jsonify(error='Arquivo invalido ou formato nao permitido'), 400
 
     ext      = f.filename.rsplit('.', 1)[1].lower()
     nome_arq = secure_filename(f"{ticket_id}_{tipo}.{ext}")
     mime     = MIME_MAP.get(ext, 'application/octet-stream')
-    dados    = f.read()  # bytes — vai para o BYTEA do banco
+    dados    = f.read()  # bytes -> BYTEA
 
-   try:
+    try:
         with get_db() as conn:
             with conn.cursor() as cur:
                 # Garante que a linha existe (INSERT OR IGNORE equivalente)
@@ -343,9 +343,9 @@ def api_upload():
     except Exception as e:
         print(f"ERRO no upload {tipo} para {ticket_id}: {e}")
         return jsonify(error=f'Erro ao salvar documento: {str(e)}'), 500
- 
 
     return jsonify(ok=True, filename=nome_arq)
+
 
 @app.route('/admin/arquivo/<ticket_id>/<tipo>')
 @login_required
@@ -466,25 +466,21 @@ def admin_logout():
 def admin_dashboard():
     return render_template('admin.html')
 
-# ── API Admin ─────────────────────────────────────────────────────────────────
-
 @app.route('/api/admin/stats')
 @login_required
 def api_admin_stats():
-    total   = query("SELECT COUNT(*) FROM participantes WHERE status!='Cancelado'", fetch='scalar')
-    checkin = query("SELECT COUNT(*) FROM participantes WHERE checkin='Sim'", fetch='scalar')
+    total    = query("SELECT COUNT(*) FROM participantes WHERE status!='Cancelado'", fetch='scalar')
+    checkin  = query("SELECT COUNT(*) FROM participantes WHERE checkin='Sim'", fetch='scalar')
     com_docs = query(
         "SELECT COUNT(DISTINCT p.id) FROM participantes p "
-        "JOIN documentos d ON p.id = d.ticket_id "
-        "WHERE p.status != 'Cancelado'",
+        "JOIN documentos d ON p.id = d.ticket_id WHERE p.status != 'Cancelado'",
         fetch='scalar'
     )
     quartos  = get_quartos_com_vagas()
-    ocupados = sum(q['ocupados'] for q in quartos)
-    lotados  = sum(1 for q in quartos if q['vagas'] <= 0)
     return jsonify(
-        total=total, checkin=checkin, ocupados=ocupados,
-        lotados=lotados, com_docs=com_docs,
+        total=total, checkin=checkin, com_docs=com_docs,
+        ocupados=sum(q['ocupados'] for q in quartos),
+        lotados=sum(1 for q in quartos if q['vagas'] <= 0),
         quartos=quartos
     )
 
@@ -494,9 +490,11 @@ def api_admin_participantes():
     q      = request.args.get('q', '').lower()
     status = request.args.get('status', '')
 
-    sql    = """
-        SELECT p.*, d.doc_participante, d.doc_responsavel,
-               d.autorizacao, d.atestado, d.comunicacao
+    sql = """
+        SELECT p.*,
+               d.doc_participante_nome, d.doc_responsavel_nome,
+               d.autorizacao_nome,      d.atestado_nome,
+               d.comunicacao_nome
         FROM participantes p
         LEFT JOIN documentos d ON p.id = d.ticket_id
         WHERE 1=1
@@ -519,12 +517,13 @@ def api_admin_participantes():
 
     result = []
     for r in rows:
+        # monta dict de docs: True se tem arquivo, False se não
         r['docs'] = {
-            'doc_participante': r.pop('doc_participante', '') or '',
-            'doc_responsavel':  r.pop('doc_responsavel', '') or '',
-            'autorizacao':      r.pop('autorizacao', '') or '',
-            'atestado':         r.pop('atestado', '') or '',
-            'comunicacao':      r.pop('comunicacao', '') or '',
+            'doc_participante': bool(r.pop('doc_participante_nome', '')),
+            'doc_responsavel':  bool(r.pop('doc_responsavel_nome', '')),
+            'autorizacao':      bool(r.pop('autorizacao_nome', '')),
+            'atestado':         bool(r.pop('atestado_nome', '')),
+            'comunicacao':      bool(r.pop('comunicacao_nome', '')),
         }
         result.append(r)
     return jsonify(result)
@@ -545,7 +544,7 @@ def api_admin_novo():
     if not q_info:
         return jsonify(error='Quarto inválido'), 400
 
-    DIAS = {'sex': 'Sexta 31/07', 'sab': 'Sábado 01/08', 'dom': 'Domingo 02/08'}
+    DIAS     = {'sex': 'Sexta 01/08', 'sab': 'Sábado 02/08', 'dom': 'Domingo 03/08'}
     dias_str = ', '.join(DIAS[d] for d in data.get('dias', []) if d in DIAS) or '—'
     qNome    = f"Quarto {q_info['num']} — {q_info['genero']} {q_info['grupo']}"
     tid      = gen_id()
@@ -572,7 +571,7 @@ def api_admin_editar(tid):
     quartos   = get_quartos_com_vagas()
     q_info    = next((q for q in quartos if q['id'] == quarto_id), None)
     qNome     = f"Quarto {q_info['num']} — {q_info['genero']} {q_info['grupo']}" if q_info else '—'
-    DIAS      = {'sex': 'Sexta 31/07', 'sab': 'Sábado 01/08', 'dom': 'Domingo 02/08'}
+    DIAS      = {'sex': 'Sexta 01/08', 'sab': 'Sábado 02/08', 'dom': 'Domingo 03/08'}
     dias_str  = ', '.join(DIAS[d] for d in data.get('dias', []) if d in DIAS) or data.get('dias_str', '—')
     execute(
         "UPDATE participantes SET nome=?,email=?,telefone=?,idade=?,cidade=?,"
@@ -592,7 +591,7 @@ def api_admin_cancelar(tid):
 @app.route('/api/admin/participante/<tid>', methods=['DELETE'])
 @login_required
 def api_admin_excluir(tid):
-    execute("DELETE FROM participantes WHERE id=?", (tid,))   # CASCADE apaga documentos
+    execute("DELETE FROM participantes WHERE id=?", (tid,))
     return jsonify(ok=True)
 
 @app.route('/api/admin/checkin', methods=['POST'])
@@ -613,7 +612,9 @@ def api_admin_checkin():
 @login_required
 def api_exportar_csv():
     rows = query(
-        "SELECT p.*, d.doc_participante, d.doc_responsavel, d.autorizacao, d.atestado, d.comunicacao "
+        "SELECT p.*, "
+        "  d.doc_participante_nome, d.doc_responsavel_nome, "
+        "  d.autorizacao_nome, d.atestado_nome, d.comunicacao_nome "
         "FROM participantes p LEFT JOIN documentos d ON p.id=d.ticket_id ORDER BY p.data DESC",
         fetch='all'
     )
@@ -628,8 +629,11 @@ def api_exportar_csv():
             r.get('idade',''), r.get('cidade',''),
             r.get('quarto_nome',''), r.get('dias',''),
             r.get('checkin',''), r.get('status',''), r.get('data',''),
-            r.get('doc_participante',''), r.get('doc_responsavel',''),
-            r.get('atestado',''), r.get('autorizacao',''), r.get('comunicacao',''),
+            '✓' if r.get('doc_participante_nome') else '',
+            '✓' if r.get('doc_responsavel_nome') else '',
+            '✓' if r.get('autorizacao_nome') else '',
+            '✓' if r.get('atestado_nome') else '',
+            '✓' if r.get('comunicacao_nome') else '',
         ])
     output.seek(0)
     return Response(
@@ -638,17 +642,6 @@ def api_exportar_csv():
         headers={'Content-Disposition': 'attachment; filename=inscritos_fmg.csv'}
     )
 
-@app.route('/admin/download/<filename>')
-@login_required
-def serve_upload(filename):
-    """Serve arquivos de upload apenas para admins logados."""
-    safe_name = os.path.basename(filename)  # evita path traversal
-    filepath = os.path.join(UPLOAD_FOLDER, safe_name)
-    if not os.path.exists(filepath):
-        abort(404)
-    return send_from_directory(UPLOAD_FOLDER, safe_name, as_attachment=False)
-
-# ── Health check (Railway/Render usam isso) ───────────────────────────────────
 @app.route('/health')
 def health():
     try:
