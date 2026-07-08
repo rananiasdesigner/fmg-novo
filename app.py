@@ -319,26 +319,36 @@ def api_upload():
     mime     = MIME_MAP.get(ext, 'application/octet-stream')
     dados    = f.read()  # bytes -> BYTEA
 
+    col_nome  = tipo + "_nome"
+    col_mime  = tipo + "_mime"
+    col_dados = tipo + "_dados"
+
     try:
         with get_db() as conn:
             with conn.cursor() as cur:
-                # Garante que a linha existe (INSERT OR IGNORE equivalente)
-                cur.execute(
-                    "INSERT INTO documentos (ticket_id) VALUES (%s) "
-                    "ON CONFLICT (ticket_id) DO NOTHING",
-                    (ticket_id,)
-                )
-                # Atualiza as 3 colunas do tipo enviado
-                col_nome  = tipo + "_nome"
-                col_mime  = tipo + "_mime"
-                col_dados = tipo + "_dados"
+                # Confere se o participante existe de fato antes de tentar salvar o doc
+                cur.execute("SELECT 1 FROM participantes WHERE id = %s", (ticket_id,))
+                if not cur.fetchone():
+                    return jsonify(error='Ticket (inscrição) não encontrado'), 404
+
+                # 1) Tenta UPDATE direto (não depende de nenhuma constraint UNIQUE)
                 cur.execute(
                     f"UPDATE documentos SET {col_nome} = %s, {col_mime} = %s, {col_dados} = %s "
                     f"WHERE ticket_id = %s",
                     (nome_arq, mime, psycopg2.Binary(dados), ticket_id)
                 )
                 rows_updated = cur.rowcount
-                print(f"Upload {tipo} para {ticket_id}: {rows_updated} linha(s) atualizada(s), {len(dados)} bytes")
+
+                # 2) Se não existia linha em "documentos" para esse ticket, cria agora
+                if rows_updated == 0:
+                    cur.execute(
+                        f"INSERT INTO documentos (ticket_id, {col_nome}, {col_mime}, {col_dados}) "
+                        f"VALUES (%s, %s, %s, %s)",
+                        (ticket_id, nome_arq, mime, psycopg2.Binary(dados))
+                    )
+                    rows_updated = cur.rowcount
+
+                print(f"Upload {tipo} para {ticket_id}: {rows_updated} linha(s) afetada(s), {len(dados)} bytes")
 
     except Exception as e:
         print(f"ERRO no upload {tipo} para {ticket_id}: {e}")
@@ -473,7 +483,10 @@ def api_admin_stats():
     checkin  = query("SELECT COUNT(*) FROM participantes WHERE checkin='Sim'", fetch='scalar')
     com_docs = query(
         "SELECT COUNT(DISTINCT p.id) FROM participantes p "
-        "JOIN documentos d ON p.id = d.ticket_id WHERE p.status != 'Cancelado'",
+        "JOIN documentos d ON p.id = d.ticket_id WHERE p.status != 'Cancelado' AND ("
+        "d.doc_participante_dados IS NOT NULL OR d.doc_responsavel_dados IS NOT NULL OR "
+        "d.autorizacao_dados IS NOT NULL OR d.atestado_dados IS NOT NULL OR "
+        "d.comunicacao_dados IS NOT NULL)",
         fetch='scalar'
     )
     quartos  = get_quartos_com_vagas()
