@@ -386,7 +386,7 @@ def baixar_arquivo(ticket_id, tipo):
         dados,
         mimetype=mime or 'application/octet-stream',
         headers={
-            'Content-Disposition': f'inline; filename="{nome_arq}"',
+            'Content-Disposition': f'attachment; filename="{nome_arq}"',
             'Content-Length': str(len(dados)),
         }
     )
